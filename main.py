@@ -1,17 +1,17 @@
 import asyncio
-
 from aiogram import Bot, Dispatcher, Router, F
-from aiogram.filters import Command, StateFilter
+from aiogram.filters import Command, StateFilter, BaseFilter
 from aiogram.fsm.state import StatesGroup, State
-from aiogram.types import Message, ReplyKeyboardMarkup, KeyboardButton
+from aiogram.types import Message, ReplyKeyboardMarkup, KeyboardButton, ReplyKeyboardRemove
 from aiogram.fsm.context import FSMContext
 from argparse import ArgumentParser
 import json
 import logging
+import os
 
 logging.basicConfig(level=logging.INFO)
 
-json_file = 'profile.json'
+json_file = os.path.join(os.getcwd(), 'profile.json')
 parser = ArgumentParser()
 parser.add_argument("--token")
 args = parser.parse_args()
@@ -31,6 +31,17 @@ text = \
 Буду очень рад знакомству :)
 '''
 
+
+class OnlyMeFilter(BaseFilter):
+
+    async def __call__(self, message: Message):
+        if hasattr(message.from_user, "username"):
+            return message.from_user.username == "sweeetferrero"
+        return False
+
+
+router.message.filter(OnlyMeFilter())
+
 class UploadPhotoState(StatesGroup):
     upload_command_entered = State()
 
@@ -45,6 +56,20 @@ def update_json(filename, **kwargs):
         data.update(kwargs)
         f.seek(0)
         json.dump(data, f, indent=4)
+
+
+@router.message(Command("start"), StateFilter(None))
+async def start_message_handler(message: Message):
+    await message.reply("Добро пожаловать. Этот бот используется для информирования ")
+
+
+@router.message(Command("current"), StateFilter(None))
+async def get_current_picture(message: Message):
+    picture_id = get_from_json(json_file, "avatar_id")
+    if picture_id:
+        await message.reply_photo(picture_id)
+    else:
+        await message.reply("No photo saved! Load it first with the /avatar command.")
 
 
 @router.message(Command("trigger"))
@@ -72,6 +97,12 @@ async def handle_photo(message, state):
     await state.clear()
 
 
+@router.message(UploadPhotoState.upload_command_entered, F.text == "Go Back")
+async def going_back(message: Message, state: FSMContext):
+    await state.clear()
+    await message.reply("The action is cancelled!", reply_markup=ReplyKeyboardRemove())
+
+
 @router.message(UploadPhotoState.upload_command_entered)
 async def no_photo_specified_handler(message):
     markup = ReplyKeyboardMarkup(keyboard=[[KeyboardButton(text="Go Back")]],
@@ -79,11 +110,6 @@ async def no_photo_specified_handler(message):
                                  input_field_placeholder="Пришлите новй аватар")
     await message.reply("Send us the new avatar or simply press \"Go Back\"", reply_markup=markup)
 
-
-@router.message(UploadPhotoState.upload_command_entered, F.text == "Go Back")
-async def going_back(message: Message, state: FSMContext):
-    await state.clear()
-    await message.reply("The action is cancelled!")
 
 
 if __name__ == "__main__":
